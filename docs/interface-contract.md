@@ -4,6 +4,27 @@
 
 ## 1. Compiler → Engine 接口
 
+### 1.0 调用方式（模块一已实现）
+
+```python
+from src.compiler.compiler import SQLCompiler
+from src.compiler.semantic import Catalog
+
+compiler = SQLCompiler()                 # 内部自带 Catalog，也可传入复用的 Catalog
+results = compiler.compile(sql_text)     # 出错抛 CompileError
+for r in results:
+    r.sql        # 语句文本
+    r.tokens     # Token 列表（含行号列号）
+    r.ast        # AST 节点
+    r.plan       # 逻辑执行计划（PlanNode）—— engine 消费它
+
+# 出错时不中断、仍需已成功部分的场景（CLI 使用）
+results, error = compiler.compile_safe(sql_text)   # error 为 None 表示全部通过
+
+# Catalog 导出/导入，供 engine 持久化
+Catalog.from_dict(catalog.to_dict())
+```
+
 ### 1.1 执行计划节点（Plan Node）
 
 统一使用**树形结构**，每个节点是一个 dataclass，均实现 `to_dict()` / `to_json()`，可无损序列化为 JSON（便于打印、测试与跨模块传递）。
@@ -13,7 +34,7 @@
 | 算子 | 字段 | 含义 |
 |------|------|------|
 | `CreateTable` | `table_name: str`, `columns: list[ColumnDef]` | 建表，columns 顺序即物理列序 |
-| `Insert` | `table_name: str`, `columns: list[str] \| None`, `rows: list[list[Literal]]` | 插入；`columns=None` 表示按表定义全列顺序插入 |
+| `Insert` | `table_name: str`, `columns: list[str]`, `rows: list[list[Literal]]` | 插入；`columns` 一定是**展开后的完整列名**（省略列名时由 planner 从 Catalog 补全） |
 | `SeqScan` | `table_name: str` | 顺序扫描整表 |
 | `Filter` | `predicate: Expr`, `child: PlanNode` | 按谓词过滤子节点输出 |
 | `Project` | `columns: list[str] \| "*"`, `child: PlanNode` | 投影；`"*"` 表示全列 |
@@ -88,6 +109,27 @@ S 表达式形式（同一计划）：
 ```
 
 `type` 取值：`INT`（4 字节）、`FLOAT`（8 字节）、`VARCHAR`（变长，length 默认 32）、`TEXT`（变长）。
+
+### 1.6 P0 范围边界（模块一当前能力）
+
+支持：`CREATE TABLE` / `INSERT`（含一次多值）/ `SELECT`（`*`、指定列、单条件 WHERE）/ `DELETE`（带或不带 WHERE）。
+
+明确不支持，且遇到即报错而非静默解析：
+
+- `AND / OR / NOT`、算术表达式（`a + 1`）、括号嵌套 —— 报 `SyntaxError`
+- `JOIN / GROUP BY / ORDER BY / UPDATE / EXPLAIN / 子查询` —— 报 `SyntaxError`
+- 任何查询优化（谓词下推、常量折叠等）—— 不做，计划形状固定为 `Project → Filter → SeqScan`
+
+### 1.7 集成检查清单（engine 侧照此对接）
+
+- [ ] `SQLCompiler().compile(sql)` 能拿到 `results[i].plan`
+- [ ] `CreateTablePlan` → 写系统目录（目录本身也通过存储引擎持久化）
+- [ ] `InsertPlan.columns` 是展开后的完整列名，直接按此顺序序列化行
+- [ ] `SeqScan` 遍历表的所有数据页，跳过删除标记行
+- [ ] `Filter` 用 `predicate` 求值；`op` 只有 `= <> != < <= > >=`；`INT` 与 `FLOAT` 比较时提升为 `FLOAT`
+- [ ] `Project` 的 `columns == "*"` 时输出全列
+- [ ] `DeletePlan.predicate` 为 `null` 表示清空表
+- [ ] 启动时用持久化的目录 `Catalog.from_dict(...)` 初始化编译器，保证重启后语义检查仍正确
 
 ---
 
@@ -192,3 +234,21 @@ class CacheManager:
 - engine/catalog 提供：`create_table_meta() / get_table_meta(table_name) / drop_table_meta() / list_tables()`
 
 > compiler/semantic 内部也维护一份**内存 Catalog**，仅用于编译期语义校验；它与 engine 的持久目录内容一致，但**不直接读写磁盘**。engine 在启动时用持久目录初始化编译器所需的 Catalog。
+
+---
+
+## 5. 运行与验证（模块一当前状态）
+
+```bash
+cd mini-db
+python -m src.main --file tests/compiler/sql/valid.sql                # 四阶段全量输出
+python -m src.main --file tests/compiler/sql/valid.sql --plan-format json
+python -m src.main                                                    # 交互模式
+python -m unittest discover -s tests -t . -p "test_*.py"              # 75 例测试
+```
+
+注意事项：
+
+1. 必须在 **mini-db 目录**下执行（模块以 `src.` 开头）
+2. 测试命令的 `-t .` 不能省略，否则 `import src` 失败
+3. 错误输出统一为 `[错误类型，位置，原因说明]`（见根 AGENTS.md 错误处理规范）
