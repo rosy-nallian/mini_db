@@ -15,13 +15,20 @@
 
 ```python
 class StorageEngine:
-    def create_table(self, table_name: str, columns: list[ColumnDef]) -> None: ...
+    def create_table(self, table_name: str, columns: list[ColumnDef]) -> int: ...  # 返回 root_page_id
+    def open_table(self, table_name: str, columns: list[ColumnDef], root_page_id: int) -> None: ...  # 重启恢复
     def insert_row(self, table_name: str, values: list[Value]) -> int: ...
     def scan_table(self, table_name: str) -> Iterator[Row]: ...     # 跳过删除行
     def delete_rows(self, table_name: str, predicate) -> int: ...
     def get_table_schema(self, table_name: str) -> list[ColumnDef]: ...
+    def has_table(self, table_name: str) -> bool: ...               # 内存态判断
+    def page_exists(self, page_id: int) -> bool: ...                # 磁盘态探测
     def flush(self) -> None: ...
 ```
+
+> 实现补充（相对接口定义新增）：`open_table`（重启时注册已有表，不重新分配页）、
+> `has_table`（内存态）、`page_exists`（磁盘态探测，供 catalog.bootstrap 判断是否
+> 首次运行）。`create_table` 返回 `root_page_id`。
 
 ## 关键格式（详见 interface-contract.md）
 
@@ -49,7 +56,7 @@ class StorageEngine:
 
 ## 完成标准
 
-- [ ] 行序列化/反序列化往返无损（含 NULL、STRING、FLOAT）
-- [ ] 单页放满时能自动申请新页
-- [ ] 标记删除后 scan 不返回该行
-- [ ] flush 后重启数据仍可扫描
+- [x] 行序列化/反序列化往返无损（含 NULL、STRING、FLOAT）
+- [x] 单页放满时能自动申请新页
+- [x] 标记删除后 scan 不返回该行
+- [x] flush 后重启数据仍可扫描

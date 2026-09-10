@@ -53,7 +53,7 @@ class QueryResult:
 
 ## 完成标准
 
-- [ ] CREATE TABLE / INSERT / SELECT(WHERE) / DELETE 四条语句执行正确
-- [ ] 系统目录作为特殊表持久化
-- [ ] 重启程序后数据与元数据不丢失
-- [ ] tests/engine 集成测试通过
+- [x] CREATE TABLE / INSERT / SELECT(WHERE) / DELETE 四条语句执行正确
+- [x] 系统目录作为特殊表持久化
+- [x] 重启程序后数据与元数据不丢失
+- [x] tests/engine 集成测试通过

@@ -34,7 +34,7 @@ Catalog.from_dict(catalog.to_dict())
 | 算子 | 字段 | 含义 |
 |------|------|------|
 | `CreateTable` | `table_name: str`, `columns: list[ColumnDef]` | 建表，columns 顺序即物理列序 |
-| `Insert` | `table_name: str`, `columns: list[str]`, `rows: list[list[Literal]]` | 插入；`columns` 一定是**展开后的完整列名**（省略列名时由 planner 从 Catalog 补全） |
+| `Insert` | `table_name: str`, `columns: list[str]`, `rows: list[list[Literal]]` | 插入；`columns` 为**目标列顺序**（省略列名时=全列，显式列名时=子集）；engine 执行时按表结构补齐为全列顺序，缺列填 NULL |
 | `SeqScan` | `table_name: str` | 顺序扫描整表 |
 | `Filter` | `predicate: Expr`, `child: PlanNode` | 按谓词过滤子节点输出 |
 | `Project` | `columns: list[str] \| "*"`, `child: PlanNode` | 投影；`"*"` 表示全列 |
@@ -139,13 +139,19 @@ S 表达式形式（同一计划）：
 
 ```python
 class StorageEngine:
-    def create_table(self, table_name: str, columns: list[ColumnDef]) -> None: ...
+    def create_table(self, table_name: str, columns: list[ColumnDef]) -> int: ...  # 返回 root_page_id
+    def open_table(self, table_name: str, columns: list[ColumnDef], root_page_id: int) -> None: ...  # 重启时注册已有表
     def insert_row(self, table_name: str, values: list[Value]) -> int: ...   # 返回 row_id
     def scan_table(self, table_name: str) -> Iterator[Row]: ...              # 跳过已删除行
     def delete_rows(self, table_name: str, predicate) -> int: ...            # 返回删除行数
     def get_table_schema(self, table_name: str) -> list[ColumnDef]: ...
+    def has_table(self, table_name: str) -> bool: ...                        # 内存态判断
+    def page_exists(self, page_id: int) -> bool: ...                         # 磁盘态探测（bootstrap 判断是否首次运行）
     def flush(self) -> None: ...                                             # 脏页落盘
 ```
+
+> 说明：`open_table` / `has_table` / `page_exists` 为 bootstrap 恢复元数据所需，在
+> 契约基础方法之上补充；`create_table` 返回 `root_page_id`（目录据此持久化首页号）。
 
 ### 2.2 行序列化格式
 

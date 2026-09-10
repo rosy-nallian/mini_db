@@ -41,6 +41,8 @@ def build(plan: PlanNode, ctx: ExecutionContext) -> Operator: ...
 ## 代码规范
 
 - 谓词求值统一走 `eval_expr()`，操作数类型按 compiler 的兼容规则提升（INT+FLOAT → FLOAT）
+  - `eval_expr` 定义于 `engine/expr.py`，由 Filter 算子与 storage_engine 的 delete_rows 共用
+- `InsertOperator` 负责把 `InsertPlan.columns`（可能为子集）按表结构补齐为全列顺序，缺列填 NULL 后写入
 - 每个算子不超过 300 行，超过则拆分
 - `Row` 在算子间以 `dict[str, Any]` 传递，列顺序由 Project 决定
 
@@ -51,7 +53,7 @@ def build(plan: PlanNode, ctx: ExecutionContext) -> Operator: ...
 
 ## 完成标准
 
-- [ ] 六类算子全部实现
-- [ ] SELECT + WHERE 结果集正确
-- [ ] 删除后再查询结果符合预期
-- [ ] 大量数据（≥1000 行）插入查询无错误
+- [x] 六类算子全部实现
+- [x] SELECT + WHERE 结果集正确
+- [x] 删除后再查询结果符合预期
+- [x] 大量数据（≥1000 行）插入查询无错误

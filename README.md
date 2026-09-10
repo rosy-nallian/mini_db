@@ -51,9 +51,38 @@ python -m src.main --file tests/compiler/sql/valid.sql
 # 交互式输入
 python -m src.main
 
+# 数据库执行模式（engine：实际执行 SQL 并打印结果集）
+python -m src.main --execute
+python -m src.main --execute --file demo.sql
+
 # 运行测试（-t . 不可省略）
 python -m unittest discover -s tests -t . -p "test_*.py" -v
 ```
+
+> 以上命令需在项目根目录执行。
+
+### Windows 一键运行（推荐）
+
+Windows 上 `python` 可能是 Microsoft Store 的占位程序（直接运行会报错），且终端默认 GBK 编码会让中文输出乱码。项目已内置启动脚本自动处理这两点（切换到 UTF-8、优先使用 `.venv` 解释器）：
+
+```bat
+:: 运行编译器（双击或命令行，参数原样透传给 python -m src.main）
+run.bat --file tests\compiler\sql\valid.sql
+run.bat                            :: 交互模式
+
+:: 运行全部测试
+test.bat
+```
+
+命令行（cmd / PowerShell）直接双击或输入脚本名即可；Git Bash 下使用 `./run.sh`、`./test.sh`。
+
+首次使用先创建虚拟环境（一次性）：
+
+```bat
+py -m venv .venv
+```
+
+（无第三方依赖，无需 `pip install`；`requirements.txt` 仅作占位。）
 
 ## 任务分级（当前只做 P0）
 

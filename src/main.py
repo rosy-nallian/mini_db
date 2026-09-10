@@ -5,6 +5,7 @@
     python -m src.main --file tests/compiler/sql/invalid.sql
     python -m src.main                     # 交互模式，输入 exit 退出
     python -m src.main --plan-format json  # 只输出 JSON 形式的执行计划
+    python -m src.main --execute           # 数据库执行模式（实际执行 SQL 并打印结果集）
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from typing import Optional
 
 from src.compiler.compiler import SQLCompiler, StatementResult
 from src.compiler.errors import CompileError, PlannerError
+from src.engine.database import Database, QueryResult
 
 SEPARATOR = "-" * 60
 
@@ -95,13 +97,87 @@ def run_interactive(plan_format: str) -> None:
             buffer = ""
 
 
+def _fmt_cell(value) -> str:
+    """把结果集单元格格式化为字符串，NULL 显示为 NULL。"""
+    if value is None:
+        return "NULL"
+    return str(value)
+
+
+def print_query_result(result: QueryResult) -> None:
+    """打印执行结果：SELECT 结果集（表格）或 DDL/DML 提示信息。"""
+    if not result.success:
+        print(f"[Error] {result.message}")
+        return
+    if result.rows is not None:
+        if not result.rows:
+            print("(空结果集)")
+        else:
+            columns = list(result.rows[0].keys())
+            cells = [[_fmt_cell(r.get(c)) for c in columns] for r in result.rows]
+            widths = [max(len(c), *(len(row[i]) for row in cells))
+                      for i, c in enumerate(columns)]
+            print(" | ".join(c.ljust(widths[i]) for i, c in enumerate(columns)))
+            print("-+-".join("-" * w for w in widths))
+            for row in cells:
+                print(" | ".join(v.ljust(widths[i]) for i, v in enumerate(row)))
+    print(f"[OK] {result.message}")
+
+
+def run_dbms_file(path: str) -> None:
+    """以执行模式运行一个 SQL 文件，逐条打印执行结果。"""
+    db = Database("data")
+    try:
+        with open(path, "r", encoding="utf-8") as fp:
+            sql_text = fp.read()
+        for result in db.execute_script(sql_text):
+            print_query_result(result)
+    except OSError as err:
+        print(f"[IOError] 无法读取文件：{err}")
+    finally:
+        db.close()
+
+
+def run_dbms_interactive() -> None:
+    """数据库执行模式的交互式 REPL。"""
+    db = Database("data")
+    print("Mini-DB 数据库（输入 SQL，以 ; 结束；输入 exit 退出）")
+    buffer = ""
+    try:
+        while True:
+            try:
+                line = input("mini-db> " if not buffer else "      -> ")
+            except (EOFError, KeyboardInterrupt):
+                print()
+                if buffer.strip():
+                    print_query_result(db.execute(buffer))
+                break
+            if line.strip().lower() in ("exit", "quit"):
+                break
+            buffer += " " + line
+            if ";" in buffer:
+                print_query_result(db.execute(buffer))
+                buffer = ""
+    finally:
+        db.close()
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Mini-DB SQL 编译器")
     parser.add_argument("--file", help="SQL 文件路径；不指定则进入交互模式")
     parser.add_argument("--plan-format", default="all",
                         choices=["tree", "json", "sexpr", "all"],
                         help="执行计划输出形式（默认 all）")
+    parser.add_argument("--execute", action="store_true",
+                        help="进入数据库执行模式（实际执行 SQL 并打印结果集）")
     args = parser.parse_args(argv)
+
+    if args.execute:
+        if args.file:
+            run_dbms_file(args.file)
+        else:
+            run_dbms_interactive()
+        return 0
 
     if args.file:
         try:
