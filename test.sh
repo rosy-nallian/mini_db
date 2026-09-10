@@ -4,13 +4,11 @@ cd "$(dirname "$0")" || exit 1
 export PYTHONUTF8=1
 
 if [ -x ".venv/Scripts/python.exe" ]; then
-    PY=".venv/Scripts/python.exe"
+    exec ".venv/Scripts/python.exe" -m unittest discover -s tests -t . -p "test_*.py" -v "$@"
 elif [ -x ".venv/bin/python" ]; then
-    PY=".venv/bin/python"
+    exec ".venv/bin/python" -m unittest discover -s tests -t . -p "test_*.py" -v "$@"
 elif command -v py >/dev/null 2>&1; then
-    PY="py"
+    exec py -3.11 -m unittest discover -s tests -t . -p "test_*.py" -v "$@"
 else
-    PY="python3"
+    exec python3 -m unittest discover -s tests -t . -p "test_*.py" -v "$@"
 fi
-
-exec "$PY" -m unittest discover -s tests -t . -p "test_*.py" -v "$@"
